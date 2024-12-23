@@ -72,15 +72,15 @@ SDL_AppResult SDL_AppEvent(void *appstate, SDL_Event *e) {
           return SDL_APP_SUCCESS;
           break;
         case SDLK_RETURN: 
-          console_append(state->con, &newline, sizeof(newline));
+          console_write(state->con, &newline, sizeof(newline));
           break;
         case SDLK_TAB:
-          console_append(state->con, &tab, sizeof(tab));
+          console_write(state->con, &tab, sizeof(tab));
           break;
       }
       break;
     case SDL_EVENT_TEXT_INPUT:
-      console_append(state->con, e->text.text, SDL_strlen(e->text.text));
+      console_write(state->con, e->text.text, SDL_strlen(e->text.text));
       break;
   }
   return SDL_AppIterate(appstate);

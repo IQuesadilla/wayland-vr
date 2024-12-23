@@ -13,7 +13,6 @@ struct console {
   TTF_Text *text;
   int window_height;
   SDL_Process *proc;
-  //SDL_IOStream *master, *slave;
   int confd;
   pid_t cpid;
   bool *SceneHasChanged;
@@ -38,15 +37,6 @@ bool console_init(struct console **con, SDL_Renderer* rend, bool *SceneHasChange
   SDL_GetWindowSize(win, &w, &h);
   console_resize(newcon, w, h);
 
-  //newcon->master = SDL_IOFromFile("/dev/ptmx", "r+b");
-  //SDL_PropertiesID mprop = SDL_GetIOProperties(newcon->master);
-  //int fd = SDL_GetNumberProperty(mprop, SDL_PROP_IOSTREAM_FILE_DESCRIPTOR_NUMBER, -1);
-  //SDL_Log("%d %s %llu", fd, ttyname(fd), newcon->master);
-  //grantpt(fd);
-  //unlockpt(fd);
-  //char *slave_path = ptsname();
-  //SDL_IOFromFile(slave_path, "r+");
-
   char* const args[] = {"/bin/sh", NULL};
   pid_t cpid = forkpty(&newcon->confd, NULL, NULL, NULL);
   if (cpid < 0) {
@@ -58,26 +48,11 @@ bool console_init(struct console **con, SDL_Renderer* rend, bool *SceneHasChange
   }
   newcon->cpid = cpid;
 
-  //SDL_PropertiesID props = SDL_CreateProperties();
-  //SDL_SetPointerProperty(props, SDL_PROP_PROCESS_CREATE_ARGS_POINTER, args);
-  //SDL_SetNumberProperty(props, SDL_PROP_PROCESS_CREATE_STDIN_NUMBER, SDL_PROCESS_STDIO_REDIRECT);
-  //SDL_SetNumberProperty(props, SDL_PROP_PROCESS_CREATE_STDOUT_NUMBER, SDL_PROCESS_STDIO_REDIRECT);
-  //SDL_SetPointerProperty(props, SDL_PROP_PROCESS_STDIN_POINTER, newcon->in);
-  //SDL_SetPointerProperty(props, SDL_PROP_PROCESS_STDOUT_POINTER, newcon->out);
-  //SDL_SetBooleanProperty(props, SDL_PROP_PROCESS_CREATE_STDERR_TO_STDOUT_BOOLEAN, true);
-  //newcon->proc = SDL_CreateProcessWithProperties(props);
-  //newcon->in = SDL_GetProcessInput(newcon->proc);
-  //newcon->out = SDL_GetProcessOutput(newcon->proc);
-
   *con = newcon;
   return true;
 }
 
 void console_deinit(struct console *con) {
-  //SDL_KillProcess(con->proc, false);
-  //SDL_CloseIO(con->master);
-  //SDL_CloseIO(con->slave);
-  //SDL_DestroyProcess(con->proc);
   kill(con->cpid, SIGHUP);
   waitpid(con->cpid, NULL, 0);
   TTF_DestroyText(con->text);
@@ -90,15 +65,12 @@ void console_resize(struct console *con, int w, int h) {
   TTF_SetTextWrapWidth(con->text, w);
 }
 
-void console_append(struct console *con, const char *text, size_t len) {
-  //TTF_AppendTextString(con->text, text, len);
-  //SDL_WriteIO(con->master, text, len);
+void console_write(struct console *con, const char *text, size_t len) {
   write(con->confd, text, len);
 }
 
 void console_update(struct console *con) {
   char buf[128];
-  //size_t len = SDL_ReadIO(con->master, buf, 128);
   struct pollfd fds = {0};
   fds.fd = con->confd;
   fds.events = POLL_IN | POLL_ERR;
