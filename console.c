@@ -16,10 +16,14 @@ struct console {
   //SDL_IOStream *master, *slave;
   int confd;
   pid_t cpid;
+  bool *SceneHasChanged;
 };
 
-bool console_init(struct console **con, SDL_Renderer* rend) {
+bool console_init(struct console **con, SDL_Renderer* rend, bool *SceneHasChanged) {
   struct console *newcon = (struct console*)SDL_malloc(sizeof(struct console));
+  newcon->SceneHasChanged = SceneHasChanged;
+  *newcon->SceneHasChanged = true;
+
   newcon->tengine = TTF_CreateRendererTextEngine(rend);
   if (newcon->tengine == NULL) return false;
 
@@ -92,7 +96,7 @@ void console_append(struct console *con, const char *text, size_t len) {
   write(con->confd, text, len);
 }
 
-void console_draw(struct console *con) {
+void console_update(struct console *con) {
   char buf[128];
   //size_t len = SDL_ReadIO(con->master, buf, 128);
   struct pollfd fds = {0};
@@ -103,10 +107,13 @@ void console_draw(struct console *con) {
       size_t len = read(con->confd, buf, 128);
       if (len > 0) {
         TTF_AppendTextString(con->text, buf, len);
+        *con->SceneHasChanged = true;
       }
     }
   }
+}
 
+void console_draw(struct console *con) {
   int h, y = 0;
   TTF_GetTextSize(con->text, NULL, &h);
   if (h > con->window_height)

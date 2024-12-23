@@ -12,9 +12,11 @@
 typedef struct {
   SDL_Window *win;
   SDL_Renderer *rend;
+  SDL_Texture *winbuf;
   Uint64 frametime;
   float loc;
   struct console *con;
+  bool SceneHasChanged;
 } MyAppstate;
 
 SDL_AppResult SDL_AppIterate(void *appstate) {
@@ -27,9 +29,23 @@ SDL_AppResult SDL_AppIterate(void *appstate) {
   state->loc += dT * 0.000000001f;
   while (state->loc > 1.f) state->loc -= 1.f;
 
-  SDL_SetRenderDrawColor(state->rend, 0x99, 0, 0, 0xff);
+  console_update(state->con);
+  if (state->SceneHasChanged) { // TODO: Move to own function and benchmark
+    SDL_SetRenderTarget(state->rend, state->winbuf);
+
+    SDL_SetRenderDrawColor(state->rend, 0, 0, 0, 0xff);
+    SDL_RenderClear(state->rend);
+
+    console_draw(state->con);
+
+    SDL_SetRenderTarget(state->rend, NULL);
+    state->SceneHasChanged = false;
+    //Uint64 t2u = SDL_GetTicksNS() - newframetime;
+    //SDL_Log("Time to Update: %lu", t2u);
+  }
+
   SDL_RenderClear(state->rend);
-  console_draw(state->con);
+  SDL_RenderTexture(state->rend, state->winbuf, NULL, NULL);
   SDL_RenderPresent(state->rend);
 
   return SDL_APP_CONTINUE;
@@ -38,6 +54,7 @@ SDL_AppResult SDL_AppIterate(void *appstate) {
 SDL_AppResult SDL_AppEvent(void *appstate, SDL_Event *e) {
   MyAppstate *state = (MyAppstate*)appstate;
   char newline = '\n', tab = '\t';
+  state->SceneHasChanged = true;
   switch(e->type) {
     case SDL_EVENT_QUIT:
       return SDL_APP_SUCCESS;
@@ -45,6 +62,8 @@ SDL_AppResult SDL_AppEvent(void *appstate, SDL_Event *e) {
     case SDL_EVENT_WINDOW_RESIZED: {
       int w, h;
       SDL_GetWindowSize(state->win, &w, &h);
+      SDL_DestroyTexture(state->winbuf);
+      state->winbuf = SDL_CreateTexture(state->rend, SDL_PIXELFORMAT_XRGB8888, SDL_TEXTUREACCESS_TARGET, w, h);
       console_resize(state->con, w, h);
     } break;
     case SDL_EVENT_KEY_DOWN:
@@ -53,10 +72,10 @@ SDL_AppResult SDL_AppEvent(void *appstate, SDL_Event *e) {
           return SDL_APP_SUCCESS;
           break;
         case SDLK_RETURN: 
-          console_append(state->con, &newline, 1);
+          console_append(state->con, &newline, sizeof(newline));
           break;
         case SDLK_TAB:
-          console_append(state->con, &tab, 1);
+          console_append(state->con, &tab, sizeof(tab));
           break;
       }
       break;
@@ -64,7 +83,7 @@ SDL_AppResult SDL_AppEvent(void *appstate, SDL_Event *e) {
       console_append(state->con, e->text.text, SDL_strlen(e->text.text));
       break;
   }
-  return SDL_APP_CONTINUE;
+  return SDL_AppIterate(appstate);
 }
 
 SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[]) {
@@ -87,7 +106,10 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[]) {
   s = SDL_CreateWindowAndRenderer("hide", 1280, 1024, SDL_WINDOW_RESIZABLE | SDL_WINDOW_TRANSPARENT, &state->win, &state->rend);
   AssertExit(s, SDL_LOG_CATEGORY_VIDEO, "Creating Window and Renderer");
 
-  s = console_init(&state->con, state->rend);
+  state->winbuf = SDL_CreateTexture(state->rend, SDL_PIXELFORMAT_XRGB8888, SDL_TEXTUREACCESS_TARGET, 1280, 1024);
+  AssertExit(state->winbuf != NULL, SDL_LOG_CATEGORY_RENDER, "Off-Screen Buffer");
+
+  s = console_init(&state->con, state->rend, &state->SceneHasChanged);
 
   state->frametime = SDL_GetTicksNS();
   state->loc = 0.f;
@@ -101,6 +123,7 @@ void SDL_AppQuit(void *appstate, SDL_AppResult result) {
   MyAppstate *state = (MyAppstate*)appstate;
   SDL_StopTextInput(state->win);
   console_deinit(state->con);
+  SDL_DestroyTexture(state->winbuf);
   SDL_DestroyRenderer(state->rend);
   SDL_DestroyWindow(state->win);
   TTF_Quit();
