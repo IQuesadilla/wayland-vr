@@ -1,1 +1,2 @@
+export PATH=$PATH:~/.local/bin
 export PKG_CONFIG_PATH=/usr/local/lib/pkgconfig/

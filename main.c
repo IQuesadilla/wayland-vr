@@ -42,11 +42,13 @@ SDL_AppResult SDL_AppIterate(void *appstate) {
     state->SceneHasChanged = false;
     //Uint64 t2u = SDL_GetTicksNS() - newframetime;
     //SDL_Log("Time to Update: %lu", t2u);
-  }
+  //}
 
+  //SDL_SetRenderDrawColor(state->rend, 0, 0, 0, 0);
   SDL_RenderClear(state->rend);
   SDL_RenderTexture(state->rend, state->winbuf, NULL, NULL);
   SDL_RenderPresent(state->rend);
+  }
 
   return SDL_APP_CONTINUE;
 }
@@ -63,7 +65,7 @@ SDL_AppResult SDL_AppEvent(void *appstate, SDL_Event *e) {
       int w, h;
       SDL_GetWindowSize(state->win, &w, &h);
       SDL_DestroyTexture(state->winbuf);
-      state->winbuf = SDL_CreateTexture(state->rend, SDL_PIXELFORMAT_XRGB8888, SDL_TEXTUREACCESS_TARGET, w, h);
+      state->winbuf = SDL_CreateTexture(state->rend, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_TARGET, w, h);
       console_resize(state->con, w, h);
     } break;
     case SDL_EVENT_KEY_DOWN:
@@ -83,7 +85,7 @@ SDL_AppResult SDL_AppEvent(void *appstate, SDL_Event *e) {
       console_write(state->con, e->text.text, SDL_strlen(e->text.text));
       break;
   }
-  return SDL_AppIterate(appstate);
+  return SDL_APP_CONTINUE; //SDL_AppIterate(appstate);
 }
 
 SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[]) {
@@ -106,7 +108,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[]) {
   s = SDL_CreateWindowAndRenderer("hide", 1280, 1024, SDL_WINDOW_RESIZABLE | SDL_WINDOW_TRANSPARENT, &state->win, &state->rend);
   AssertExit(s, SDL_LOG_CATEGORY_VIDEO, "Creating Window and Renderer");
 
-  state->winbuf = SDL_CreateTexture(state->rend, SDL_PIXELFORMAT_XRGB8888, SDL_TEXTUREACCESS_TARGET, 1280, 1024);
+  state->winbuf = SDL_CreateTexture(state->rend, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_TARGET, 1280, 1024);
   AssertExit(state->winbuf != NULL, SDL_LOG_CATEGORY_RENDER, "Off-Screen Buffer");
 
   s = console_init(&state->con, state->rend, &state->SceneHasChanged);
