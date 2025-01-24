@@ -8,34 +8,38 @@
 #include <sys/wait.h>
 #include <sys/ioctl.h>
 
-void console_process(struct console *con, const char *text, int len);
+int console_process(struct console *con, const char *text, int len);
 
 /*------ Console Object Definition ------*/
+
+struct dirtyrect {
+  struct dirtyrect *next;
+  SDL_Rect rect;
+};
 
 struct console {
   TTF_TextEngine *tengine;
   TTF_Font *font;
   TTF_Text *text;
   int window_height;
-  SDL_Process *proc;
+  //SDL_Process *proc;
   int confd;
   pid_t cpid;
-  bool *SceneHasChanged;
   int curx, cury;
+  int doRedraw;
+  struct dirtyrect *dirtyrects;
 };
 
 /*------ Console Object Functions ------*/
 
-bool console_init(struct console **con, SDL_Renderer* rend, bool *SceneHasChanged) {
+bool console_init(struct console **con, SDL_Renderer* rend) {
   struct console *newcon = (struct console*)SDL_malloc(sizeof(struct console));
-  newcon->SceneHasChanged = SceneHasChanged;
-  *newcon->SceneHasChanged = true;
 
   newcon->tengine = TTF_CreateRendererTextEngine(rend);
   if (newcon->tengine == NULL) return false;
 
-  console_setfontsize(newcon, 12);
-  if (newcon->font == NULL) return false;
+  bool s = console_setfontsize(newcon, 12);
+  if (newcon->font == NULL || !s) return false;
 
   newcon->text = TTF_CreateText(newcon->tengine, newcon->font, "", 0);
   if (newcon->text == NULL) return false;
@@ -63,8 +67,8 @@ bool console_init(struct console **con, SDL_Renderer* rend, bool *SceneHasChange
 }
 
 void console_deinit(struct console *con) {
-  kill(con->cpid, SIGHUP);
-  waitpid(con->cpid, NULL, 0);
+  if (kill(con->cpid, SIGHUP) == 0)
+    waitpid(con->cpid, NULL, 0);
   TTF_DestroyText(con->text);
   TTF_CloseFont(con->font);
   TTF_DestroyRendererTextEngine(con->tengine); 
@@ -84,15 +88,15 @@ void console_resize(struct console *con, int w, int h) {
   ioctl(con->confd, TIOCSWINSZ, &sz);
 }
 
-void console_setfontsize(struct console *con, int sz) {
+bool console_setfontsize(struct console *con, int sz) {
   TTF_Font *newfont = TTF_OpenFont("font.ttf", 16);
-  if (newfont == NULL) return;
+  if (newfont == NULL) return false;
 
   if (!TTF_FontIsFixedWidth(newfont)) {
     SDL_LogError(SDL_LOG_CATEGORY_RENDER, "FONT IS NOT MONOSPACE!\n");
     TTF_CloseFont(newfont);
     con->font = NULL;
-    return;
+    return false;
   }
   con->font = newfont;
 
@@ -104,13 +108,14 @@ void console_setfontsize(struct console *con, int sz) {
 
   TTF_GetStringSize(con->font, "m", 1, &maxx, &maxy);
   SDL_Log("W: %d, H: %d\n", maxx, maxy);
+  return true;
 }
 
 void console_write(struct console *con, const char *text, size_t len) {
   write(con->confd, text, len);
 }
 
-void console_update(struct console *con) {
+int console_update(struct console *con) {
   char buf[128];
   struct pollfd fds = {0};
   fds.fd = con->confd;
@@ -123,21 +128,50 @@ void console_update(struct console *con) {
       }
     }
   }
+  return con->doRedraw;
 }
 
 void console_draw(struct console *con) {
+  // NOTE: In this case, the dirty rectangles should refer to locations, not pixels
   int h, y = 0;
   TTF_GetTextSize(con->text, NULL, &h);
   if (h > con->window_height)
     y = con->window_height - h;
   TTF_DrawRendererText(con->text, 0, y);
+  con->doRedraw = 0;
 }
 
 /*------ Helper Functions ------*/
 
-void console_process(struct console *con, const char *text, int len) {
-  *con->SceneHasChanged = true;
-  const char cur = (char)219;
+//void console_cleardirtyrects(struct console *con)
+
+void console_addredraw(struct console *con, SDL_Rect *region) {
+  if (region == NULL) {
+    con->doRedraw = 2; // Do a clear and redraw
+    struct dirtyrect *it = con->dirtyrects;
+    while (it != NULL) {
+      struct dirtyrect *next = it->next;
+      SDL_free(it);
+      it = next;
+    }
+  } else if (con->doRedraw > 1) { // Don't bother with dirty rects if already 2
+    con->doRedraw = 1; // Only redraw dirty rects
+    struct dirtyrect *newitem = SDL_malloc(sizeof(struct dirtyrect));
+    newitem->next = NULL;
+    newitem->rect = *region;
+    if (con->dirtyrects == NULL) {
+      con->dirtyrects = newitem;
+    } else {
+      struct dirtyrect *last = con->dirtyrects;
+      while (last->next != NULL) last = last->next;
+      last->next = newitem;
+    }
+  }
+}
+
+int console_process(struct console *con, const char *text, int len) {
+  //*con->SceneHasChanged = true;
+  //const char cur = (char)219;
   //TTF_SetTextString(con->text, text, len);
   TTF_AppendTextString(con->text, text, len);
   //TTF_AppendTextString(con->text, &cur, 1);
@@ -159,4 +193,5 @@ void console_process(struct console *con, const char *text, int len) {
       }
     }
   }
+  return 0;
 }
