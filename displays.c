@@ -5,12 +5,14 @@ struct display {
   char name[64];
   SDL_GPUGraphicsPipeline *pipeline;
   SDL_Window *win;
+  struct Transform t;
+  struct display *next;
 };
 
 struct displays {
   SDL_GPUDevice *gpudev;
   SDL_GPUGraphicsPipelineCreateInfo pipelineci;
-  struct displaynode *list;
+  struct display *list;
 };
 
 struct displays* InitDisplays(SDL_GPUDevice *dev, SDL_GPUGraphicsPipelineCreateInfo pipeline) {
@@ -23,20 +25,27 @@ struct displays* InitDisplays(SDL_GPUDevice *dev, SDL_GPUGraphicsPipelineCreateI
 }
 
 void DeinitDisplays(struct displays *d) {
-  for (struct displaynode *it = d->list; it != NULL; it = it->next) {
-    SDL_ReleaseWindowFromGPUDevice(d->gpudev, it->d->win);
-    SDL_DestroyWindow(it->d->win);
+  for (struct display *it = d->list; it != NULL; it = it->next) {
+    SDL_ReleaseWindowFromGPUDevice(d->gpudev, it->win);
+    SDL_DestroyWindow(it->win);
   }
 }
 
-struct displaynode *GetDisplayList(struct displays *d) {
-  return d->list;
+struct display *GetNextDisplay(struct displays *d, struct display *n) {
+  if (n == NULL)
+    return d->list;
+  else
+    return n->next;
 }
 
-SDL_GPURenderPass *BeginRenderPass(struct displaynode *d, SDL_GPUCommandBuffer *cmdbuf) {
+struct Transform *GetDisplayTransform(struct display *n) {
+  return &n->t;
+}
+
+SDL_GPURenderPass *BeginRenderPass(struct display *d, SDL_GPUCommandBuffer *cmdbuf) {
   bool s;
   SDL_GPUTexture *swapchainTexture;
-  s = SDL_WaitAndAcquireGPUSwapchainTexture(cmdbuf, d->d->win, &swapchainTexture, NULL, NULL);
+  s = SDL_WaitAndAcquireGPUSwapchainTexture(cmdbuf, d->win, &swapchainTexture, NULL, NULL);
   if (!s || swapchainTexture == NULL) {
     SDL_LogCritical(SDL_LOG_CATEGORY_GPU, "Failed to acquire GPU swapchain texture (%s)", SDL_GetError());
     return NULL;
@@ -48,7 +57,7 @@ SDL_GPURenderPass *BeginRenderPass(struct displaynode *d, SDL_GPUCommandBuffer *
   ColorTargetInfo.store_op = SDL_GPU_STOREOP_STORE;
 
   SDL_GPURenderPass *ret = SDL_BeginGPURenderPass(cmdbuf, &ColorTargetInfo, 1, NULL);
-  SDL_BindGPUGraphicsPipeline(ret, d->d->pipeline);
+  SDL_BindGPUGraphicsPipeline(ret, d->pipeline);
   return ret;
 }
 
@@ -67,10 +76,10 @@ bool UpdateDisplays(struct displays *disp, int *dispcount) {
       return false;
     }
 
-    struct displaynode *last = NULL;
+    struct display *last = NULL;
     bool found = false;
-    for (struct displaynode *it = disp->list; it != NULL; it = it->next) {
-      if (SDL_strcmp(it->d->name, name) == 0) { // Display found in list
+    for (struct display *it = disp->list; it != NULL; it = it->next) {
+      if (SDL_strcmp(it->name, name) == 0) { // Display found in list
         found = true;
         break;
       }
@@ -115,13 +124,14 @@ bool UpdateDisplays(struct displays *disp, int *dispcount) {
         return false;
       }
 
-      struct displaynode *newnode = SDL_malloc(sizeof(struct displaynode));
-      newnode->d = SDL_malloc(sizeof(struct display));
-      SDL_utf8strlcpy(newnode->d->name, name, 64);
-      newnode->d->pipeline = pipeline;
-      newnode->d->win = win;
+      struct display *newnode = SDL_malloc(sizeof(struct display));
+      newnode = SDL_malloc(sizeof(struct display));
+      SDL_utf8strlcpy(newnode->name, name, 64);
+      newnode->pipeline = pipeline;
+      newnode->win = win;
       newnode->next = NULL;
       SDL_memset(&newnode->t, 0, sizeof(newnode->t));
+      //newnode->t.Rotation[2] = 1.f; // Start looking at +z
 
       SDL_Log("%d: '%s' %dx%d@%.2f",
               disps[k],
@@ -138,11 +148,13 @@ bool UpdateDisplays(struct displays *disp, int *dispcount) {
   return true;
 }
 
-void CalculateVPMatrix(struct displaynode *d, mat4 view, mat4 persp) {
+void CalculateVPMatrix(struct display *d, mat4 view, mat4 persp) {
   //glm_mat4_identity(vp);
   int w, h;
-  SDL_GetWindowSize(d->d->win, &w, &h);
+  SDL_GetWindowSize(d->win, &w, &h);
   //SDL_Log("%f", ((float)w) / ((float)h));
   glm_perspective(70.f, ((float)w) / ((float)h), 0.1f, 30.f, persp);
-  glm_look((vec3){0.f, 0.f, 10.f}, (vec3){0.f, 0.f, -1.f}, (vec3){0.f, 1.f, 0.f}, view);
+  versor quat;
+  glm_euler_yxz_quat(d->t.Rotation, quat);
+  glm_quat_look(d->t.Translation, quat, view);
 }

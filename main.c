@@ -324,6 +324,10 @@ int main(int argc, char *argv[]) {
   bool loop = true;
   SDL_Gamepad *curgpad = NULL;
   struct win2d *win = NULL;
+  struct Transform Movement = {0};
+  int deadzone = 10000;
+  bool WindowControl = true;
+  float MovementSpeed = 0.1f, RotationSpeed = 0.05f;
   while (loop) {
     SDL_Event e;
     while (SDL_PollEvent(&e)) {
@@ -371,6 +375,9 @@ int main(int argc, char *argv[]) {
               SDL_Log("Found Start!");
               loop = false;
               break;
+            case SDL_GAMEPAD_BUTTON_SOUTH:
+              WindowControl = !WindowControl;
+              break;
             default:
               SDL_Log("Gamepad button down: %s", SDL_GetGamepadStringForButton(e.gbutton.button));
               break;
@@ -379,34 +386,58 @@ int main(int argc, char *argv[]) {
         case SDL_EVENT_GAMEPAD_AXIS_MOTION:
           //SDL_Log("Gamepad axis motion: %d %s", e.gaxis.value, SDL_GetGamepadStringForAxis(e.gaxis.axis));
           if (win != NULL) {
-            struct Transform *t = GetTransform(win);
             switch (e.gaxis.axis) {
               case SDL_GAMEPAD_AXIS_LEFTX:
-                t->Translation[0] = ((float)e.gaxis.value) / 32768.f;
+                if (abs(e.gaxis.value) > deadzone)
+                  Movement.Translation[0] = (((float)e.gaxis.value) / 32768.f) * MovementSpeed;
+                else Movement.Translation[0] = 0;
                 break;
               case SDL_GAMEPAD_AXIS_LEFTY:
-                t->Translation[1] = ((float)e.gaxis.value) / -32768.f;
+                if (abs(e.gaxis.value) > deadzone)
+                  Movement.Translation[2] = (((float)e.gaxis.value) / 32768.f) * MovementSpeed;
+                else Movement.Translation[2] = 0;
                 break;
               case SDL_GAMEPAD_AXIS_LEFT_TRIGGER:
-                t->Translation[2] = ((float)e.gaxis.value) / -32768.f;
-                break;
-              case SDL_GAMEPAD_AXIS_RIGHTX:
-                t->Rotation[1] = ((float)e.gaxis.value) / 32768.f;
-                //versor newrot;
-                //glm_rotate(t->Rotation, ((float)e.gaxis.value) / 32768.f, 0.f, 1.f, 0.f);
-                //glm_quat_mul(t->Rotation, newrot, t->Rotation);
-              break;
-              case SDL_GAMEPAD_AXIS_RIGHTY:
-                t->Rotation[0] = ((float)e.gaxis.value) / 32768.f;
-                //glm_quat(t->Rotation, ((float)e.gaxis.value) / -32768.f, 1.f, 0.f, 0.f);
+                if (abs(e.gaxis.value) > deadzone)
+                  Movement.Translation[1] = (((float)e.gaxis.value) / -32768.f) * MovementSpeed * cosf(Movement.Rotation[0]) * cosf(Movement.Rotation[1]);
+                else Movement.Translation[1] = 0;
                 break;
               case SDL_GAMEPAD_AXIS_RIGHT_TRIGGER:
-                //t->Rotation[0] = ((float)e.gaxis.value) / -32768.f;
+                if (abs(e.gaxis.value) > deadzone)
+                  Movement.Translation[1] = (((float)e.gaxis.value) / 32768.f) * MovementSpeed;
+                else Movement.Translation[1] = 0;
+                break;
+              case SDL_GAMEPAD_AXIS_RIGHTX:
+                if (abs(e.gaxis.value) > deadzone)
+                  Movement.Rotation[1] = (((float)e.gaxis.value) / -32768.f) * RotationSpeed;
+                else Movement.Rotation[1] = 0;
+              break;
+              case SDL_GAMEPAD_AXIS_RIGHTY:
+                if (abs(e.gaxis.value) > deadzone)
+                  Movement.Rotation[0] = (((float)e.gaxis.value) / -32768.f) * RotationSpeed;
+                else Movement.Rotation[0] = 0;
                 break;
             }
           }
           break;
       }
+    }
+
+    {
+      struct Transform *tp, *dtp = GetDisplayTransform(GetNextDisplay(disp, NULL));
+      versor quat;
+      if (WindowControl) {
+        tp = GetWin2DTransform(win);
+        glm_vec3_sub(tp->Rotation, Movement.Rotation, tp->Rotation);
+        glm_euler_yxz_quat(dtp->Rotation, quat);
+      } else {
+        tp = dtp;
+        glm_vec3_add(tp->Rotation, Movement.Rotation, tp->Rotation);
+        glm_euler_yxz_quat((vec3){0.f, dtp->Rotation[1], 0.f}, quat);
+      }
+      vec3 trans;
+      glm_quat_rotatev(quat, Movement.Translation, trans);
+      glm_vec3_add(trans, tp->Translation, tp->Translation);
     }
 
     bool newframe = AcquireFrame(win);
@@ -421,7 +452,7 @@ int main(int argc, char *argv[]) {
       SDL_EndGPUCopyPass(cp);
     }
 
-    for (struct displaynode *it = GetDisplayList(disp); it != NULL; it = it->next) {
+    for (struct display *it = GetNextDisplay(disp, NULL); it != NULL; it = GetNextDisplay(disp, it)) {
       SDL_PushGPUVertexUniformData(cmdbuf, 0, WallpaperMVP, sizeof(mat4));
       mat4 FrameViewMat, FramePerspMat;
       CalculateVPMatrix(it, FrameViewMat, FramePerspMat);
@@ -437,6 +468,27 @@ int main(int argc, char *argv[]) {
         SDL_PushGPUVertexUniformData(cmdbuf, 0, FrameMVP, sizeof(mat4));
         SDL_BindGPUFragmentSamplers(renderPass, 0, &WindowSampler, 1);
         SDL_DrawGPUPrimitives(renderPass, 6, 1, 0, 0);
+
+        vec3 TVerts[6];
+        for (int k = 0; k < 6; ++k) {
+          vec4 full = {Vertices[k].x, Vertices[k].y, 0.f, 1.f};
+          glm_mat4_mulv(FrameModelMat, full, full);
+          glm_vec3_divs(full, full[3], TVerts[k]);
+        }
+        versor rot;
+        vec3 ray;
+        struct Transform *t = GetDisplayTransform(it);
+        glm_euler_yxz_quat(t->Rotation, rot);
+        glm_quat_rotatev(rot, (vec3){0.f, 0.f, -1.f}, ray);
+        float dis1, dis2;
+        static bool WasCasted = false;
+        bool IsCasted = glm_ray_triangle(t->Translation, ray, TVerts[0], TVerts[1], TVerts[2], &dis1) ||
+                        glm_ray_triangle(t->Translation, ray, TVerts[3], TVerts[4], TVerts[5], &dis2);
+        if (IsCasted && !WasCasted)
+            SDL_Log("CASTED");
+        if (!IsCasted && WasCasted) 
+          SDL_Log("UNCASTED");
+        WasCasted = IsCasted;
       }
       SDL_EndGPURenderPass(renderPass);
       /*SDL_BlitGPUTexture(cmdbuf, &(SDL_GPUBlitInfo){

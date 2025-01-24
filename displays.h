@@ -8,18 +8,12 @@
 struct display;
 struct displays;
 
-struct displaynode {
-  struct display *d;
-  struct Transform t;
-  struct displaynode *next;
-  void *user;
-};
-
 struct displays* InitDisplays(SDL_GPUDevice *dev, SDL_GPUGraphicsPipelineCreateInfo pipeline);
 void DeinitDisplays(struct displays *d);
-struct displaynode *GetDisplayList(struct displays *d);
-SDL_GPURenderPass *BeginRenderPass(struct displaynode *d, SDL_GPUCommandBuffer *cmdbuf);
+struct display *GetNextDisplay(struct displays *d, struct display *n);
+struct Transform *GetDisplayTransform(struct display *n);
+SDL_GPURenderPass *BeginRenderPass(struct display *d, SDL_GPUCommandBuffer *cmdbuf);
 bool UpdateDisplays(struct displays *disp, int *dispcount);
-void CalculateVPMatrix(struct displaynode *d, mat4 view, mat4 persp);
+void CalculateVPMatrix(struct display *d, mat4 view, mat4 persp);
 
 #endif

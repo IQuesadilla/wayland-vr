@@ -15,7 +15,7 @@ struct win2d *InitWin2D(SDL_CameraID camid, SDL_GPUDevice *dev);
 void DeinitWin2D(struct win2d *win);
 bool AcquireFrame(struct win2d *win);
 SDL_GPUTexture *UploadFrame(struct win2d *win, SDL_GPUCopyPass *CopyPass);
-struct Transform *GetTransform(struct win2d *win);
+struct Transform *GetWin2DTransform(struct win2d *win);
 void CalculateModelMat(struct win2d *win, mat4 model);
 
 #endif

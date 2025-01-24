@@ -133,7 +133,7 @@ SDL_GPUTexture *UploadFrame(struct win2d *cam, SDL_GPUCopyPass *CopyPass) {
   return cam->tex;
 }
 
-struct Transform *GetTransform(struct win2d *win) {
+struct Transform *GetWin2DTransform(struct win2d *win) {
   return &win->t;
 }
 
