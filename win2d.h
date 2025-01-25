@@ -11,11 +11,11 @@ struct Transform {
 
 struct win2d;
 
-struct win2d *InitWin2D(SDL_CameraID camid, SDL_GPUDevice *dev);
-void DeinitWin2D(struct win2d *win);
-bool AcquireFrame(struct win2d *win);
-SDL_GPUTexture *UploadFrame(struct win2d *win, SDL_GPUCopyPass *CopyPass);
-struct Transform *GetWin2DTransform(struct win2d *win);
-void CalculateModelMat(struct win2d *win, mat4 model);
+struct win2d *WayVR_Cam2D_Init(SDL_CameraID camid, SDL_GPUDevice *dev);
+void WayVR_Cam2D_Deinit(struct win2d *win);
+bool WayVR_Cam2D_AcquireFrame(struct win2d *win);
+SDL_GPUTexture *WayVR_Cam2D_UploadFrame(struct win2d *win, SDL_GPUCopyPass *CopyPass);
+struct Transform *WayVR_Cam2D_GetTransform(struct win2d *win);
+void WayVR_Cam2D_CalculateModelMat(struct win2d *win, mat4 model);
 
 #endif

@@ -76,7 +76,7 @@ bool NewTex(struct win2d *cam, SDL_Surface *frame, bool delete) {
   return true;
 }
 
-struct win2d *InitWin2D(SDL_CameraID camid, SDL_GPUDevice *dev) {
+struct win2d *WayVR_Cam2D_Init(SDL_CameraID camid, SDL_GPUDevice *dev) {
   SDL_Camera *cam = SDL_OpenCamera(camid, NULL);
 
   struct win2d *obj = SDL_malloc(sizeof(struct win2d));
@@ -88,7 +88,7 @@ struct win2d *InitWin2D(SDL_CameraID camid, SDL_GPUDevice *dev) {
   SDL_Surface *noinput = SDL_CreateSurface(64, 64, SDL_PIXELFORMAT_ARGB8888);
   SDL_Log("Uploading noinput");
   if (!NewTex(obj, noinput, false)) {
-    SDL_Log("FAILED");
+    SDL_Log("Failed creating new texture (%s)", SDL_GetError());
     SDL_free(obj);
     return NULL;
   }
@@ -97,14 +97,14 @@ struct win2d *InitWin2D(SDL_CameraID camid, SDL_GPUDevice *dev) {
   return obj;
 }
 
-void DeinitWin2D(struct win2d *cam) {
+void WayVR_Cam2D_Deinit(struct win2d *cam) {
   SDL_ReleaseGPUTexture(cam->dev, cam->tex);
   SDL_ReleaseGPUTransferBuffer(cam->dev, cam->tti.transfer_buffer);
   SDL_CloseCamera(cam->cam);
   SDL_free(cam);
 }
 
-bool AcquireFrame(struct win2d *cam) {
+bool WayVR_Cam2D_AcquireFrame(struct win2d *cam) {
   Uint64 ts;
   bool wasfirst = cam->first;
   cam->first = false;
@@ -127,17 +127,17 @@ bool AcquireFrame(struct win2d *cam) {
   return true;
 }
 
-SDL_GPUTexture *UploadFrame(struct win2d *cam, SDL_GPUCopyPass *CopyPass) {
+SDL_GPUTexture *WayVR_Cam2D_UploadFrame(struct win2d *cam, SDL_GPUCopyPass *CopyPass) {
   //SDL_Log("Uploading frame");
   SDL_UploadToGPUTexture(CopyPass, &cam->tti, &cam->treg, false);
   return cam->tex;
 }
 
-struct Transform *GetWin2DTransform(struct win2d *win) {
+struct Transform *WayVR_Cam2D_GetTransform(struct win2d *win) {
   return &win->t;
 }
 
-void CalculateModelMat(struct win2d *win, mat4 model) {
+void WayVR_Cam2D_CalculateModelMat(struct win2d *win, mat4 model) {
   glm_mat4_identity(model);
   versor quat;
   float h = win->h;

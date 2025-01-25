@@ -1,7 +1,8 @@
-project('sdldemo', 'c')
+project('wayvr', 'c')
 
 wayvr_asset_dir = get_option('prefix') / get_option('datadir') / 'wayvr'
-add_project_arguments('-DWAYVR_ASSET_DIR="' + wayvr_asset_dir + '"', language: 'c')
+add_project_arguments(['-DWAYVR_ASSET_DIR="' + wayvr_asset_dir + '"'], language: 'c')
+#add_global_arguments(['-DSDL_MAIN_USE_CALLBACKS'], language: 'c')
 
 sdl3_dep = dependency('sdl3')
 sdl3_ttf_dep = dependency('sdl3-ttf')
@@ -16,8 +17,9 @@ executable('wayvr_console',
   install: true
 )
 
-executable('wayvr_displays',
-  ['main.c', 'displays.c', 'win2d.c'],
+executable('wayvr',
+  ['AppInit.c', 'AppEvent.c', 'AppIterate.c', 'displays.c', 'window.c', 'win2d.c'],
   dependencies: [sdl3_dep, cglm_dep],
+  link_args: ['-lm'],
   install: true
 )
