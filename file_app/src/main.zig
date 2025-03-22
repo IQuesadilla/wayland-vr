@@ -166,9 +166,17 @@ const Button = struct {
         _ = SDL.SDL_RenderFillRect(rend, &DrawRect);
 
         _ = SDL.SDL_SetRenderDrawColor(rend, 255, 255, 255, 255);
-        const halftwidth: f32 = @floatFromInt(@divTrunc((self.Name.len * 8) + 2, 2));
+        var Name: []u8 = self.Name;
         const halfwidth: f32 = DrawRect.w / 2; //@floatFromInt(@divTrunc(self.pos.w, 2));
-        _ = SDL.SDL_RenderDebugText(rend, DrawRect.x + 1 + halfwidth - halftwidth, DrawRect.y + 1, self.Name.ptr);
+        var halftwidth: f32 = @as(f32, @floatFromInt(Name.len)) * 8 / 2;
+        if (halftwidth > halfwidth) {
+            Name.len = @intCast(SDL.SDL_asprintf(@ptrCast(&Name.ptr), "%.4s...", self.Name.ptr));
+        }
+        halftwidth = @as(f32, @floatFromInt(Name.len)) * 8 / 2;
+        _ = SDL.SDL_RenderDebugText(rend, DrawRect.x + halfwidth - halftwidth, DrawRect.y + 1, Name.ptr);
+        if (halftwidth > halfwidth) {
+            SDL.SDL_free(Name.ptr);
+        }
 
         var k = self.ChildCount;
         while (k > 0) {
