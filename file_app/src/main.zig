@@ -4,6 +4,9 @@ const SDL = @cImport({
 });
 
 fn EnumerateDirectoryCallback(nstate: ?*anyopaque, dirname: [*c]const u8, fname: [*c]const u8) callconv(.C) SDL.SDL_EnumerationResult {
+    if (fname[0] == '.')
+        return SDL.SDL_ENUM_CONTINUE;
+
     if (nstate) |astate| {
         const state: *Button = @alignCast(@ptrCast(astate));
         if (state.ChildCount == state.Children.len) {
@@ -50,11 +53,16 @@ fn EnumerateDirectoryCallback(nstate: ?*anyopaque, dirname: [*c]const u8, fname:
     return SDL.SDL_ENUM_CONTINUE;
 }
 
-const Button = struct {
+const Rectangle = struct {
     x: isize,
     y: isize,
+    z: isize,
     w: isize,
     h: isize,
+};
+
+const Button = struct {
+    pos: Rectangle,
     IsMouseOver: bool,
     Name: [*c]u8,
     Path: [*c]u8,
@@ -151,7 +159,7 @@ pub fn AppInit() !AppState {
         return error.GeneralFailure;
     }
 
-    const win: *SDL.SDL_Window = SDL.SDL_CreateWindow(",,", 640, 480, SDL.SDL_WINDOW_RESIZABLE | SDL.SDL_WINDOW_TRANSPARENT) orelse return error.GeneralFailure;
+    const win: *SDL.SDL_Window = SDL.SDL_CreateWindow(",,", 1024, 720, SDL.SDL_WINDOW_RESIZABLE | SDL.SDL_WINDOW_TRANSPARENT) orelse return error.GeneralFailure;
     const rend: *SDL.SDL_Renderer = SDL.SDL_CreateRenderer(win, null) orelse return error.GeneralFailure;
 
     var ret: AppState = .{
