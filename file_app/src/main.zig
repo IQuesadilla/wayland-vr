@@ -39,10 +39,10 @@ fn EnumerateDirectoryCallback(nstate: ?*anyopaque, dirname: [*c]const u8, fname:
             const shift: isize = @intCast(SDL.SDL_utf8strlen(state.Name));
             const width: isize = @intCast(SDL.SDL_utf8strlen(newbtn.Name));
             newbtn.IsMouseOver = false;
-            newbtn.x = state.x + (shift * 8) + 4;
-            newbtn.y = state.y + @as(isize, @intCast(12 * state.ChildCount));
-            newbtn.w = (width * 8) + 2;
-            newbtn.h = state.h;
+            newbtn.pos.x = state.pos.x + (shift * 8) + 4;
+            newbtn.pos.y = state.pos.y + @as(isize, @intCast(12 * state.ChildCount));
+            newbtn.pos.w = (width * 8) + 2;
+            newbtn.pos.h = state.pos.h;
             //newbtn.Children.len = 0;
             newbtn.Children = &[0]Button{};
             newbtn.ChildCount = 0;
@@ -71,7 +71,7 @@ const Button = struct {
     TypeChar: c_char,
 
     fn UpdateIsMouseOver(self: *Button, x: isize, y: isize) void {
-        self.IsMouseOver = (x > self.x and x < self.x + self.w and y > self.y and y < self.y + self.h);
+        self.IsMouseOver = (x > self.pos.x and x < self.pos.x + self.pos.w and y > self.pos.y and y < self.pos.y + self.pos.h);
         for (0..self.ChildCount) |k| {
             self.Children[k].UpdateIsMouseOver(x, y);
         }
@@ -127,10 +127,10 @@ const Button = struct {
 
     fn Render(self: *Button, rend: *SDL.SDL_Renderer) !void {
         const DrawRect: SDL.SDL_FRect = .{
-            .x = @as(f32, @floatFromInt(self.x)),
-            .y = @as(f32, @floatFromInt(self.y)),
-            .w = @as(f32, @floatFromInt(self.w)),
-            .h = @as(f32, @floatFromInt(self.h)),
+            .x = @as(f32, @floatFromInt(self.pos.x)),
+            .y = @as(f32, @floatFromInt(self.pos.y)),
+            .w = @as(f32, @floatFromInt(self.pos.w)),
+            .h = @as(f32, @floatFromInt(self.pos.h)),
         };
         const blue: u8 = if (self.IsMouseOver) 255 else 30;
         _ = SDL.SDL_SetRenderDrawColor(rend, 30, 30, blue, 255);
@@ -159,6 +159,17 @@ pub fn AppInit() !AppState {
         return error.GeneralFailure;
     }
 
+    var fsize: c_long = 8;
+    const env: *SDL.SDL_Environment = SDL.SDL_GetEnvironment() orelse return error.GeneralFailure;
+    const wvr_fontsize: [*c]const u8 = SDL.SDL_GetEnvironmentVariable(env, "WVR_FONTSIZE");
+    if (wvr_fontsize) |ptr| {
+        const temp_fsize = SDL.SDL_strtol(ptr, null, 10);
+        if (temp_fsize != 0) {
+            fsize = temp_fsize;
+        }
+    }
+    SDL.SDL_Log("FontSize: %d\n", fsize);
+
     const win: *SDL.SDL_Window = SDL.SDL_CreateWindow(",,", 1024, 720, SDL.SDL_WINDOW_RESIZABLE | SDL.SDL_WINDOW_TRANSPARENT) orelse return error.GeneralFailure;
     const rend: *SDL.SDL_Renderer = SDL.SDL_CreateRenderer(win, null) orelse return error.GeneralFailure;
 
@@ -166,10 +177,13 @@ pub fn AppInit() !AppState {
         .win = win,
         .rend = rend,
         .btn = .{
-            .x = 1,
-            .y = 1,
-            .w = (4 * 8) + 2,
-            .h = 10,
+            .pos = .{
+                .x = 1,
+                .y = 1,
+                .z = 0,
+                .w = (4 * 8) + 2,
+                .h = 10,
+            },
             .IsMouseOver = false,
             .TypeChar = 'D',
             .Children = &[0]Button{},
@@ -207,9 +221,6 @@ pub fn AppIterate(state: *AppState) !bool {
     _ = SDL.SDL_RenderClear(state.rend);
 
     try state.btn.Render(state.rend);
-
-    //_ = SDL.SDL_SetRenderDrawColor(state.rend, 255, 255, 255, 255);
-    //_ = SDL.SDL_RenderDebugText(state.rend, 0.0, 0.0, state.text);
 
     _ = SDL.SDL_RenderPresent(state.rend);
 
