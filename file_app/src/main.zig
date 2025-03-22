@@ -27,7 +27,8 @@ fn EnumerateDirectoryCallback(nstate: ?*anyopaque, dirname: [*c]const u8, fname:
         if (!SDL.SDL_GetPathInfo(newbtn.Path, &PathInfo)) {
             SDL.SDL_Log("Failed to get path info [%s]: %s\n", newbtn.Path, SDL.SDL_GetError());
         } else {
-            _ = SDL.SDL_asprintf(&newbtn.Name, "%s", fname);
+            newbtn.Name.len = @intCast(SDL.SDL_asprintf(@ptrCast(&newbtn.Name.ptr), "%s", fname));
+
             newbtn.TypeChar = switch (PathInfo.type) {
                 SDL.SDL_PATHTYPE_NONE => 'N',
                 SDL.SDL_PATHTYPE_FILE => 'F',
@@ -36,13 +37,14 @@ fn EnumerateDirectoryCallback(nstate: ?*anyopaque, dirname: [*c]const u8, fname:
                 else => '?',
             };
 
-            const shift: isize = @intCast(SDL.SDL_utf8strlen(state.Name));
-            const width: isize = @intCast(SDL.SDL_utf8strlen(newbtn.Name));
+            //const shift: isize = @intCast(SDL.SDL_utf8strlen(state.Name));
+            //const width: isize = @intCast(SDL.SDL_utf8strlen(newbtn.Name));
             newbtn.IsMouseOver = false;
-            newbtn.pos.x = state.pos.x + (shift * 8) + 4;
-            newbtn.pos.y = state.pos.y + @as(isize, @intCast(12 * state.ChildCount));
-            newbtn.pos.w = (width * 8) + 2;
+            newbtn.pos.x = 1; //state.pos.x + (shift * 8) + 4;
+            newbtn.pos.y = 1; //state.pos.y + @as(isize, @intCast(12 * state.ChildCount));
+            newbtn.pos.w = 1; //(width * 8) + 2;
             newbtn.pos.h = state.pos.h;
+            newbtn.Selected = false;
             //newbtn.Children.len = 0;
             newbtn.Children = &[0]Button{};
             newbtn.ChildCount = 0;
@@ -64,11 +66,21 @@ const Rectangle = struct {
 const Button = struct {
     pos: Rectangle,
     IsMouseOver: bool,
-    Name: [*c]u8,
+    Name: []u8,
     Path: [*c]u8,
     Children: []Button,
     ChildCount: usize,
     TypeChar: c_char,
+    Selected: bool,
+
+    fn MoveTo(self: *Button, x: isize, y: isize, screenw: usize) void {
+        self.pos.x = x - @divTrunc(self.pos.w, 2);
+        self.pos.y = y - @divTrunc(self.pos.h, 2);
+        for (0..self.ChildCount) |k| {
+            self.Children[k].pos.w = @intCast(@divTrunc(screenw, self.ChildCount + 1));
+            self.Children[k].MoveTo(@intCast(@divTrunc(screenw, self.ChildCount + 1) * (k + 1)), self.pos.y + (self.pos.h * 2) + 2, screenw);
+        }
+    }
 
     fn UpdateIsMouseOver(self: *Button, x: isize, y: isize) void {
         self.IsMouseOver = (x > self.pos.x and x < self.pos.x + self.pos.w and y > self.pos.y and y < self.pos.y + self.pos.h);
@@ -87,9 +99,10 @@ const Button = struct {
             self.Children.len = 0;
         }
         if (!first) {
-            SDL.SDL_free(self.Name);
+            SDL.SDL_free(self.Name.ptr);
             SDL.SDL_free(self.Path);
         }
+        self.Selected = false;
     }
 
     fn UpdateChildren(self: *Button) void {
@@ -97,6 +110,7 @@ const Button = struct {
             'D' => {
                 if (self.Children.len == 0) {
                     _ = SDL.SDL_EnumerateDirectory(self.Path, EnumerateDirectoryCallback, self);
+                    self.Selected = self.Children.len > 0;
                 } else {
                     self.Dealloc(true);
                 }
@@ -114,15 +128,29 @@ const Button = struct {
         }
     }
 
-    fn TriggerClicked(self: *Button) void {
+    fn TriggerClicked(self: *Button) bool {
         if (self.IsMouseOver) {
             self.UpdateChildren();
-            SDL.SDL_Log("Button Clicked! %d %d\n", self.Children.len, self.ChildCount);
+            return true;
+            //SDL.SDL_Log("Button Clicked! %d %d\n", self.Children.len, self.ChildCount);
         }
 
+        var del: isize = -1;
         for (0..self.ChildCount) |k| {
-            self.Children[k].TriggerClicked();
+            if (del > -1) {
+                self.Children[k].Dealloc(true);
+            } else {
+                if (self.Children[k].TriggerClicked()) {
+                    del = @intCast(k);
+                }
+            }
         }
+        if (del > 0) {
+            for (0..@intCast(del)) |k| {
+                self.Children[k].Dealloc(true);
+            }
+        }
+        return false;
     }
 
     fn Render(self: *Button, rend: *SDL.SDL_Renderer) !void {
@@ -133,11 +161,14 @@ const Button = struct {
             .h = @as(f32, @floatFromInt(self.pos.h)),
         };
         const blue: u8 = if (self.IsMouseOver) 255 else 30;
-        _ = SDL.SDL_SetRenderDrawColor(rend, 30, 30, blue, 255);
+        const green: u8 = if (self.Selected) 255 else 30;
+        _ = SDL.SDL_SetRenderDrawColor(rend, 30, green, blue, 255);
         _ = SDL.SDL_RenderFillRect(rend, &DrawRect);
 
         _ = SDL.SDL_SetRenderDrawColor(rend, 255, 255, 255, 255);
-        _ = SDL.SDL_RenderDebugText(rend, DrawRect.x + 1, DrawRect.y + 1, self.Name);
+        const halftwidth: f32 = @floatFromInt(@divTrunc((self.Name.len * 8) + 2, 2));
+        const halfwidth: f32 = DrawRect.w / 2; //@floatFromInt(@divTrunc(self.pos.w, 2));
+        _ = SDL.SDL_RenderDebugText(rend, DrawRect.x + 1 + halfwidth - halftwidth, DrawRect.y + 1, self.Name.ptr);
 
         var k = self.ChildCount;
         while (k > 0) {
@@ -151,6 +182,14 @@ const AppState = struct {
     win: *SDL.SDL_Window,
     rend: *SDL.SDL_Renderer,
     btn: Button,
+
+    fn ResizeWin(self: *AppState) void {
+        var winw: c_int = 0;
+        var winh: c_int = 0;
+        if (SDL.SDL_GetWindowSize(self.win, &winw, &winh)) {
+            self.btn.MoveTo(@divFloor(winw, 2), 10, @intCast(winw));
+        }
+    }
 };
 
 pub fn AppInit() !AppState {
@@ -178,7 +217,7 @@ pub fn AppInit() !AppState {
         .rend = rend,
         .btn = .{
             .pos = .{
-                .x = 1,
+                .x = 1024 / 2,
                 .y = 1,
                 .z = 0,
                 .w = (4 * 8) + 2,
@@ -190,11 +229,12 @@ pub fn AppInit() !AppState {
             .ChildCount = 0,
             .Name = undefined,
             .Path = undefined,
+            .Selected = false,
         },
     };
     //_ = SDL.SDL_asprintf(&ret.text, "");
 
-    _ = SDL.SDL_asprintf(&ret.btn.Name, "Home");
+    ret.btn.Name.len = @intCast(SDL.SDL_asprintf(@ptrCast(&ret.btn.Name.ptr), "Home"));
     _ = SDL.SDL_asprintf(&ret.btn.Path, "%s", SDL.SDL_GetUserFolder(SDL.SDL_FOLDER_HOME));
     //SDL.SDL_Log("ALL: %s\n", ret.text);
 
@@ -210,7 +250,11 @@ pub fn AppEvent(state: *AppState, e: SDL.SDL_Event) !bool {
             state.btn.UpdateIsMouseOver(@intFromFloat(e.motion.x), @intFromFloat(e.motion.y));
         },
         SDL.SDL_EVENT_MOUSE_BUTTON_DOWN => {
-            state.btn.TriggerClicked();
+            _ = state.btn.TriggerClicked();
+            state.ResizeWin();
+        },
+        SDL.SDL_EVENT_WINDOW_RESIZED => {
+            state.ResizeWin();
         },
         else => {},
     }
