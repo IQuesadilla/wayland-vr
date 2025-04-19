@@ -1,6 +1,9 @@
 //const std = @import("std");
+//const builtin = @import("builtin");
+const os = @import("std").os;
 const SDL = @cImport({
     @cInclude("SDL3/SDL.h");
+    @cInclude("SDL3_ttf/SDL_ttf.h");
 });
 
 fn EnumerateDirectoryCallback(nstate: ?*anyopaque, dirname: [*c]const u8, fname: [*c]const u8) callconv(.C) SDL.SDL_EnumerationResult {
@@ -18,7 +21,6 @@ fn EnumerateDirectoryCallback(nstate: ?*anyopaque, dirname: [*c]const u8, fname:
                 state.Children.ptr = @alignCast(@ptrCast(SDL.SDL_realloc(state.Children.ptr, state.Children.len * @sizeOf(Button))));
             }
         }
-        //const newbtn: *Button = SDL.SDL_malloc();
 
         const newbtn = &state.Children[state.ChildCount];
         _ = SDL.SDL_asprintf(&newbtn.Path, "%s%s", dirname, fname);
@@ -27,7 +29,8 @@ fn EnumerateDirectoryCallback(nstate: ?*anyopaque, dirname: [*c]const u8, fname:
         if (!SDL.SDL_GetPathInfo(newbtn.Path, &PathInfo)) {
             SDL.SDL_Log("Failed to get path info [%s]: %s\n", newbtn.Path, SDL.SDL_GetError());
         } else {
-            newbtn.Name.len = @intCast(SDL.SDL_asprintf(@ptrCast(&newbtn.Name.ptr), "%s", fname));
+            //newbtn.Name.len = @intCast(SDL.SDL_asprintf(@ptrCast(&newbtn.Name.ptr), "%s", fname));
+            newbtn.Name = SDL.TTF_CreateText(state.state.tengine, state.state.font, fname, 0) orelse return SDL.SDL_ENUM_CONTINUE;
 
             newbtn.TypeChar = switch (PathInfo.type) {
                 SDL.SDL_PATHTYPE_NONE => 'N',
@@ -45,9 +48,9 @@ fn EnumerateDirectoryCallback(nstate: ?*anyopaque, dirname: [*c]const u8, fname:
             newbtn.pos.w = 1; //(width * 8) + 2;
             newbtn.pos.h = state.pos.h;
             newbtn.Selected = false;
-            //newbtn.Children.len = 0;
             newbtn.Children = &[0]Button{};
             newbtn.ChildCount = 0;
+            newbtn.state = state.state;
 
             state.ChildCount += 1;
         }
@@ -66,12 +69,13 @@ const Rectangle = struct {
 const Button = struct {
     pos: Rectangle,
     IsMouseOver: bool,
-    Name: []u8,
+    Name: *SDL.TTF_Text,
     Path: [*c]u8,
     Children: []Button,
     ChildCount: usize,
     TypeChar: c_char,
     Selected: bool,
+    state: *AppState,
 
     fn MoveTo(self: *Button, x: isize, y: isize, screenw: usize) void {
         self.pos.x = x - @divTrunc(self.pos.w, 2);
@@ -99,7 +103,7 @@ const Button = struct {
             self.Children.len = 0;
         }
         if (!first) {
-            SDL.SDL_free(self.Name.ptr);
+            SDL.TTF_DestroyText(self.Name);
             SDL.SDL_free(self.Path);
         }
         self.Selected = false;
@@ -153,7 +157,11 @@ const Button = struct {
         return false;
     }
 
-    fn Render(self: *Button, rend: *SDL.SDL_Renderer) !void {
+    fn Render(self: *Button) !void {
+        var w: c_int = 0;
+        var h: c_int = 0;
+        _ = SDL.TTF_GetTextSize(self.Name, &w, &h);
+
         const DrawRect: SDL.SDL_FRect = .{
             .x = @as(f32, @floatFromInt(self.pos.x)),
             .y = @as(f32, @floatFromInt(self.pos.y)),
@@ -161,27 +169,41 @@ const Button = struct {
             .h = @as(f32, @floatFromInt(self.pos.h)),
         };
         const blue: u8 = if (self.IsMouseOver) 255 else 30;
-        const green: u8 = if (self.Selected) 255 else 30;
-        _ = SDL.SDL_SetRenderDrawColor(rend, 30, green, blue, 255);
-        _ = SDL.SDL_RenderFillRect(rend, &DrawRect);
+        const green: u8 = if (self.Selected) 150 else 30;
 
-        _ = SDL.SDL_SetRenderDrawColor(rend, 255, 255, 255, 255);
-        var Name: []u8 = self.Name;
+        _ = SDL.SDL_SetRenderDrawColor(self.state.rend, 255, 255, 255, 255);
+
+        _ = SDL.SDL_SetRenderDrawColor(self.state.rend, 30, green, blue, 255);
+        _ = SDL.SDL_RenderFillRect(self.state.rend, &DrawRect);
+
         const halfwidth: f32 = DrawRect.w / 2; //@floatFromInt(@divTrunc(self.pos.w, 2));
-        var halftwidth: f32 = @as(f32, @floatFromInt(Name.len)) * 8 / 2;
+        var halftwidth: f32 = @as(f32, @floatFromInt(w)) / 2;
+
+        var Name: *SDL.TTF_Text = self.Name;
+        var cutoff: bool = false;
         if (halftwidth > halfwidth) {
-            Name.len = @intCast(SDL.SDL_asprintf(@ptrCast(&Name.ptr), "%.4s...", self.Name.ptr));
+            var TName: []u8 = undefined;
+            TName.len = @intCast(SDL.SDL_asprintf(@ptrCast(&TName.ptr), "%.4s...", self.Name.text));
+            defer SDL.SDL_free(TName.ptr);
+
+            Name = SDL.TTF_CreateText(self.state.tengine, self.state.font, TName.ptr, TName.len) orelse return error.GeneralFailure;
+            _ = SDL.TTF_GetTextSize(Name, &w, &h);
+            halftwidth = @as(f32, @floatFromInt(w)) / 2;
+
+            cutoff = true;
         }
-        halftwidth = @as(f32, @floatFromInt(Name.len)) * 8 / 2;
-        _ = SDL.SDL_RenderDebugText(rend, DrawRect.x + halfwidth - halftwidth, DrawRect.y + 1, Name.ptr);
-        if (halftwidth > halfwidth) {
-            SDL.SDL_free(Name.ptr);
+
+        //_ = SDL.SDL_RenderDebugText(state.rend, 1 + DrawRect.x + halfwidth - halftwidth, DrawRect.y + 1, Name);
+        _ = SDL.TTF_DrawRendererText(Name, 1 + DrawRect.x + halfwidth - halftwidth, DrawRect.y + 1);
+
+        if (cutoff) {
+            SDL.TTF_DestroyText(Name);
         }
 
         var k = self.ChildCount;
         while (k > 0) {
             k -= 1;
-            try self.Children[k].Render(rend);
+            try self.Children[k].Render();
         }
     }
 };
@@ -189,7 +211,11 @@ const Button = struct {
 const AppState = struct {
     win: *SDL.SDL_Window,
     rend: *SDL.SDL_Renderer,
+    tengine: *SDL.TTF_TextEngine,
+    font: *SDL.TTF_Font,
     btn: Button,
+    StartTime: SDL.SDL_Time,
+    Ticks: u64,
 
     fn ResizeWin(self: *AppState) void {
         var winw: c_int = 0;
@@ -200,53 +226,79 @@ const AppState = struct {
     }
 };
 
-pub fn AppInit() !AppState {
+pub fn AppInit(state: *AppState, argv: [][*:0]u8) !void {
+    _ = argv;
     if (!SDL.SDL_Init(SDL.SDL_INIT_VIDEO)) {
         SDL.SDL_Log("Couldn't initialize SDL: %s", SDL.SDL_GetError());
         return error.GeneralFailure;
     }
 
-    var fsize: c_long = 8;
+    if (!SDL.TTF_Init()) {
+        SDL.SDL_Log("Failed to initialize TTF: %s", SDL.SDL_GetError());
+        return error.GeneralFailure;
+    }
+
+    var fsize: f64 = 16;
     const env: *SDL.SDL_Environment = SDL.SDL_GetEnvironment() orelse return error.GeneralFailure;
     const wvr_fontsize: [*c]const u8 = SDL.SDL_GetEnvironmentVariable(env, "WVR_FONTSIZE");
     if (wvr_fontsize) |ptr| {
-        const temp_fsize = SDL.SDL_strtol(ptr, null, 10);
+        const temp_fsize: f64 = SDL.SDL_strtod(ptr, null);
         if (temp_fsize != 0) {
             fsize = temp_fsize;
         }
     }
-    SDL.SDL_Log("FontSize: %d\n", fsize);
+    SDL.SDL_Log("FontSize: %f\n", fsize);
 
     const win: *SDL.SDL_Window = SDL.SDL_CreateWindow(",,", 1024, 720, SDL.SDL_WINDOW_RESIZABLE | SDL.SDL_WINDOW_TRANSPARENT) orelse return error.GeneralFailure;
     const rend: *SDL.SDL_Renderer = SDL.SDL_CreateRenderer(win, null) orelse return error.GeneralFailure;
+    if (!SDL.SDL_SetRenderVSync(rend, 1)) {
+        SDL.SDL_Log("Failed to set render vsync (%s)\n", SDL.SDL_GetError());
+    }
+    const tengine: *SDL.TTF_TextEngine = SDL.TTF_CreateRendererTextEngine(rend) orelse return error.GeneralFailure;
+    const font: *SDL.TTF_Font = SDL.TTF_OpenFont("./font.ttf", @floatCast(fsize)) orelse return error.GeneralFailure;
+    const Name: *SDL.TTF_Text = SDL.TTF_CreateText(tengine, font, "Home", 0) orelse return error.GeneralFailure;
 
-    var ret: AppState = .{
+    var w: c_int = 0;
+    var h: c_int = 0;
+    _ = SDL.TTF_GetTextSize(Name, &w, &h);
+
+    var ctime: SDL.SDL_Time = 0;
+    _ = SDL.SDL_GetCurrentTime(&ctime);
+
+    //var ret: *AppState = @alignCast(@ptrCast(SDL.SDL_malloc(@sizeOf(AppState))));
+    state.* = .{
         .win = win,
         .rend = rend,
+        .tengine = tengine,
+        .font = font,
+        .StartTime = ctime,
+        .Ticks = 0,
         .btn = .{
             .pos = .{
-                .x = 1024 / 2,
-                .y = 1,
+                .x = 1,
+                .y = 10,
                 .z = 0,
-                .w = (4 * 8) + 2,
-                .h = 10,
+                .w = w + 2,
+                .h = h + 2,
             },
             .IsMouseOver = false,
             .TypeChar = 'D',
             .Children = &[0]Button{},
             .ChildCount = 0,
-            .Name = undefined,
+            .Name = Name,
             .Path = undefined,
             .Selected = false,
+            .state = state,
         },
     };
     //_ = SDL.SDL_asprintf(&ret.text, "");
 
-    ret.btn.Name.len = @intCast(SDL.SDL_asprintf(@ptrCast(&ret.btn.Name.ptr), "Home"));
-    _ = SDL.SDL_asprintf(&ret.btn.Path, "%s", SDL.SDL_GetUserFolder(SDL.SDL_FOLDER_HOME));
+    //ret.btn.Name.len = @intCast(SDL.SDL_asprintf(@ptrCast(&ret.btn.Name.ptr), "Home"));
+    _ = SDL.SDL_asprintf(&state.btn.Path, "/."); // "%s", SDL.SDL_GetUserFolder(SDL.SDL_FOLDER_HOME));
     //SDL.SDL_Log("ALL: %s\n", ret.text);
 
-    return ret;
+    state.ResizeWin();
+    return;
 }
 
 pub fn AppEvent(state: *AppState, e: SDL.SDL_Event) !bool {
@@ -272,18 +324,35 @@ pub fn AppIterate(state: *AppState) !bool {
     _ = SDL.SDL_SetRenderDrawColorFloat(state.rend, 0.0, 0.0, 0.0, SDL.SDL_ALPHA_TRANSPARENT_FLOAT);
     _ = SDL.SDL_RenderClear(state.rend);
 
-    try state.btn.Render(state.rend);
+    try state.btn.Render();
 
     _ = SDL.SDL_RenderPresent(state.rend);
+
+    state.Ticks += 1;
 
     return true;
 }
 pub fn AppQuit(state: *AppState) void {
-    _ = state;
+    var ctime: SDL.SDL_Time = 0;
+    _ = SDL.SDL_GetCurrentTime(&ctime);
+
+    const frames: f32 = @floatFromInt(state.Ticks);
+    const seconds: f32 = @as(f32, @floatFromInt(ctime - state.StartTime)) / 1_000_000_000;
+    const fps: f32 = frames / seconds;
+    SDL.SDL_Log("Avg FPS: %f | Frames: %f | Seconds: %f\n", fps, frames, seconds);
+
+    SDL.TTF_DestroyText(state.btn.Name);
+    SDL.TTF_DestroyRendererTextEngine(state.tengine);
+    SDL.TTF_CloseFont(state.font);
+    SDL.SDL_DestroyRenderer(state.rend);
+    SDL.SDL_DestroyWindow(state.win);
+    SDL.TTF_Quit();
+    SDL.SDL_Quit();
 }
 
 pub fn main() !void {
-    var state: AppState = try AppInit();
+    var state: AppState = undefined;
+    try AppInit(&state, os.argv);
     defer AppQuit(&state);
 
     var loop: bool = true;
