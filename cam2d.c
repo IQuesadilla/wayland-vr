@@ -1,6 +1,6 @@
-#include "win2d.h"
+#include "cam2d.h"
 
-struct win2d {
+struct cam2d {
   SDL_Camera *cam;
   SDL_GPUDevice *dev;
   SDL_GPUTexture *tex;
@@ -12,7 +12,7 @@ struct win2d {
   struct Transform t;
 };
 
-bool NewTex(struct win2d *cam, SDL_Surface *frame, bool delete) {
+bool NewTex(struct cam2d *cam, SDL_Surface *frame, bool delete) {
   if (cam->w != frame->w || cam->h != frame->h) {
     SDL_Log("Creating new texture for camera (%dx%d)", frame->w, frame->h);
 
@@ -76,10 +76,10 @@ bool NewTex(struct win2d *cam, SDL_Surface *frame, bool delete) {
   return true;
 }
 
-struct win2d *WayVR_Cam2D_Init(SDL_CameraID camid, SDL_GPUDevice *dev) {
+struct cam2d *WayVR_Cam2D_Init(SDL_CameraID camid, SDL_GPUDevice *dev) {
   SDL_Camera *cam = SDL_OpenCamera(camid, NULL);
 
-  struct win2d *obj = SDL_malloc(sizeof(struct win2d));
+  struct cam2d *obj = SDL_malloc(sizeof(struct cam2d));
   obj->cam = cam;
   obj->dev = dev;
   obj->first = true;
@@ -97,14 +97,14 @@ struct win2d *WayVR_Cam2D_Init(SDL_CameraID camid, SDL_GPUDevice *dev) {
   return obj;
 }
 
-void WayVR_Cam2D_Deinit(struct win2d *cam) {
+void WayVR_Cam2D_Deinit(struct cam2d *cam) {
   SDL_ReleaseGPUTexture(cam->dev, cam->tex);
   SDL_ReleaseGPUTransferBuffer(cam->dev, cam->tti.transfer_buffer);
   SDL_CloseCamera(cam->cam);
   SDL_free(cam);
 }
 
-bool WayVR_Cam2D_AcquireFrame(struct win2d *cam) {
+bool WayVR_Cam2D_AcquireFrame(struct cam2d *cam) {
   Uint64 ts;
   bool wasfirst = cam->first;
   cam->first = false;
@@ -127,25 +127,28 @@ bool WayVR_Cam2D_AcquireFrame(struct win2d *cam) {
   return true;
 }
 
-SDL_GPUTexture *WayVR_Cam2D_UploadFrame(struct win2d *cam, SDL_GPUCopyPass *CopyPass) {
+void WayVR_Cam2D_UploadFrame(struct cam2d *cam, SDL_GPUCopyPass *CopyPass) {
   //SDL_Log("Uploading frame");
   SDL_UploadToGPUTexture(CopyPass, &cam->tti, &cam->treg, false);
+}
+
+SDL_GPUTexture *WayVR_Cam2D_GetTexture(struct cam2d *cam) {
   return cam->tex;
 }
 
-struct Transform *WayVR_Cam2D_GetTransform(struct win2d *win) {
-  return &win->t;
+struct Transform *WayVR_Cam2D_GetTransform(struct cam2d *cam) {
+  return &cam->t;
 }
 
-void WayVR_Cam2D_CalculateModelMat(struct win2d *win, mat4 model) {
+void WayVR_Cam2D_CalculateModelMat(struct cam2d *cam, mat4 model) {
   glm_mat4_identity(model);
   versor quat;
-  float h = win->h;
-  float w = win->w;
+  float h = cam->h;
+  float w = cam->w;
   float x = glm_min(w / h, 1.f);// * win->t.Scale[1];
   float y = glm_min(h / w, 1.f);// * win->t.Scale[0];
-  glm_translate(model, win->t.Translation);
-  glm_euler_yxz_quat(win->t.Rotation, quat);
+  glm_translate(model, cam->t.Translation);
+  glm_euler_yxz_quat(cam->t.Rotation, quat);
   glm_quat_rotate(model, quat, model);
   glm_scale(model, (vec3){x, y, 1.f});
 }

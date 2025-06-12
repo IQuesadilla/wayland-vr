@@ -47,7 +47,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[]) {
   s = SDL_Init(SDL_INIT_VIDEO | SDL_INIT_CAMERA | SDL_INIT_GAMEPAD);
   if (!s) {
     SDL_LogCritical(SDL_LOG_CATEGORY_APPLICATION, "Failed to initialize SDL (%s)", SDL_GetError());
-    return 1;
+    return SDL_APP_FAILURE;
   }
 
   SDL_Log("Asset Dir: %s", WAYVR_ASSET_DIR);
@@ -55,30 +55,30 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[]) {
   int camcount;
   SDL_GetCameras(&camcount);
   SDL_Log("Camera Count: %d", camcount);
-  if (camcount < 1) {
+  /*if (camcount < 1) {
     SDL_Log("Not Enought Cameras! Quitting...");
-    return 0;
-  }
+    return SDL_APP_FAILURE;
+  }*/
 
   int gpadcount;
   SDL_GetGamepads(&gpadcount);
   SDL_Log("Gamepad count: %d", gpadcount);
   /*if (gpadcount < 1) {
     SDL_Log("Not enough Gamepads! Quitting...");
-    return 0;
+    return SDL_APP_FAILURE;
   }*/
   SDL_SetGamepadEventsEnabled(true);
 
   app->dev = SDL_CreateGPUDevice(SDL_GPU_SHADERFORMAT_SPIRV, false, NULL);
   if (app->dev == NULL) {
     SDL_LogCritical(SDL_LOG_CATEGORY_GPU, "Failed to create GPU device (%s)", SDL_GetError());
-    return 1;
+    return SDL_APP_FAILURE;
   }
 
   //struct win2d *cwin = InitWin2D(IDs[0], dev);
   //if (cwin == NULL) {
     //SDL_LogCritical(SDL_LOG_CATEGORY_INPUT, "Failed to initialize win2d (%s)", SDL_GetError());
-    //return 1;
+    //return SDL_APP_FAILURE;
   //}
 
   //SDL_GPUShader *vert = LoadShader(dev, SDL_GPU_SHADERSTAGE_VERTEX, WAYVR_ASSET_DIR "/assets/IndexedTriangle.vert.spv", 0, 0, 0, 0);
@@ -86,13 +86,13 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[]) {
   //SDL_GPUShader *vert = LoadShader(dev, SDL_GPU_SHADERSTAGE_VERTEX, WAYVR_ASSET_DIR "/assets/RawTriangle.vert.spv", 0, 0, 0, 0);
   if (vert == NULL) {
     SDL_LogCritical(SDL_LOG_CATEGORY_GPU, "Failed to load vertex shader (%s)", SDL_GetError());
-    return 1;
+    return SDL_APP_FAILURE;
   }
 
   SDL_GPUShader *frag = LoadShader(app->dev, SDL_GPU_SHADERSTAGE_FRAGMENT, WAYVR_ASSET_DIR "/assets/sample.frag.spv", 1, 0, 0, 0);
   if (frag == NULL) {
     SDL_LogCritical(SDL_LOG_CATEGORY_GPU, "Failed to load fragment shader (%s)", SDL_GetError());
-    return 1;
+    return SDL_APP_FAILURE;
   }
 
   /*float Vertices[] = {
@@ -135,6 +135,15 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[]) {
     .fragment_shader = frag,
     .rasterizer_state = {
       .fill_mode = SDL_GPU_FILLMODE_FILL,
+    },
+    .multisample_state = {
+      .sample_count = SDL_GPU_SAMPLECOUNT_1,
+    },
+    .depth_stencil_state = {
+      .enable_depth_test = true,
+      .enable_depth_write = true,
+      .compare_op = SDL_GPU_COMPAREOP_LESS_OR_EQUAL,
+      .enable_stencil_test = false,
     }
   };
 
@@ -150,7 +159,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[]) {
   SDL_GPUBuffer *buff = SDL_CreateGPUBuffer(app->dev, &buffInfo);
   if (buff == NULL) {
     SDL_LogCritical(SDL_LOG_CATEGORY_GPU, "Failed to create GPU buffer (%s)", SDL_GetError());
-    return 1;
+    return SDL_APP_FAILURE;
   }
   SDL_GPUBufferRegion reg = {
     .buffer = buff,
@@ -166,7 +175,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[]) {
   SDL_GPUTransferBuffer *tbuff = SDL_CreateGPUTransferBuffer(app->dev, &tbci);
   if (tbuff == NULL) {
     SDL_LogCritical(SDL_LOG_CATEGORY_GPU, "Failed to create GPU transfer buffer (%s)", SDL_GetError());
-    return 1;
+    return SDL_APP_FAILURE;
   }
   SDL_GPUTransferBufferLocation loc = {
     .transfer_buffer = tbuff,
@@ -176,13 +185,13 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[]) {
   SDL_Surface *bmp1 = SDL_LoadBMP(WAYVR_ASSET_DIR "/assets/uvtemplate.bmp");
   if (bmp1 == NULL) {
     SDL_LogCritical(SDL_LOG_CATEGORY_SYSTEM, "Failed to load bmp (%s)", SDL_GetError());
-    return 1;
+    return SDL_APP_FAILURE;
   }
   SDL_Surface *bmp = SDL_ConvertSurface(bmp1, SDL_PIXELFORMAT_ARGB8888);
   SDL_DestroySurface(bmp1);
   if (bmp == NULL) {
     SDL_LogCritical(SDL_LOG_CATEGORY_SYSTEM, "Failed to convert bmp (%s)", SDL_GetError());
-    return 1;
+    return SDL_APP_FAILURE;
   }
   int imageSizeInBytes = bmp->w * bmp->h * 4;
   SDL_Log("BMP: %dx%d * 4 = %d", bmp->w, bmp->h, imageSizeInBytes);
@@ -199,7 +208,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[]) {
   SDL_GPUTexture *WallpaperTexture = SDL_CreateGPUTexture(app->dev, &tci);
   if (WallpaperTexture == NULL) {
     SDL_LogCritical(SDL_LOG_CATEGORY_GPU, "Failed to create texture (%s)", SDL_GetError());
-    return 1;
+    return SDL_APP_FAILURE;
   }
   SDL_GPUTextureRegion treg = {
     .texture = WallpaperTexture,
@@ -220,7 +229,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[]) {
   SDL_GPUSampler *Sampler = SDL_CreateGPUSampler(app->dev, &sci);
   if (Sampler == NULL) {
     SDL_LogCritical(SDL_LOG_CATEGORY_GPU, "Failed to create sampler (%s)", SDL_GetError());
-    return 1;
+    return SDL_APP_FAILURE;
   }
 
   SDL_GPUTransferBufferCreateInfo textbuffci = {
@@ -230,7 +239,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[]) {
   SDL_GPUTransferBuffer* textbuff = SDL_CreateGPUTransferBuffer(app->dev, &textbuffci);
   if (textbuff == NULL) {
     SDL_LogCritical(SDL_LOG_CATEGORY_GPU, "Failed to create GPU texture transfer buffer (%s)", SDL_GetError());
-    return 1;
+    return SDL_APP_FAILURE;
   }
   SDL_GPUTextureTransferInfo textinfo = {
     .transfer_buffer = textbuff,
@@ -242,7 +251,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[]) {
   SDL_FPoint *mem = SDL_MapGPUTransferBuffer(app->dev, tbuff, false);
   if (mem == NULL) {
     SDL_LogCritical(SDL_LOG_CATEGORY_GPU, "Failed to map GPU transfer buffer (%s)", SDL_GetError());
-    return 1;
+    return SDL_APP_FAILURE;
   }
   for (int k = 0; k < 6; ++k) {
     int m = k * 2;
@@ -254,7 +263,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[]) {
   void *pixels = SDL_MapGPUTransferBuffer(app->dev, textbuff, false);
   if (pixels == NULL) {
     SDL_LogCritical(SDL_LOG_CATEGORY_GPU, "Failed to map GPU texture transfer buffer (%s)", SDL_GetError());
-    return 1;
+    return SDL_APP_FAILURE;
   }
   //SDL_memset(pixels, 0xFF, imageSizeInBytes);
   //SDL_memcpy(pixels, bmp->pixels, imageSizeInBytes);
@@ -263,7 +272,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[]) {
 
   SDL_GPUCommandBuffer *cmdbuf = SDL_AcquireGPUCommandBuffer(app->dev);
   if (cmdbuf == NULL)
-    return 1;
+    return SDL_APP_FAILURE;
 
   SDL_GPUCopyPass *copyPass = SDL_BeginGPUCopyPass(cmdbuf);
   SDL_UploadToGPUBuffer(copyPass, &loc, &reg, false);
@@ -273,7 +282,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[]) {
   s = SDL_SubmitGPUCommandBuffer(cmdbuf);
   if (!s) {
     SDL_LogCritical(SDL_LOG_CATEGORY_GPU, "Failed to submit GPU cmd buffer (%s)", SDL_GetError());
-    return 1;
+    return SDL_APP_FAILURE;
   }
 
   SDL_ReleaseGPUTransferBuffer(app->dev, tbuff);
@@ -304,8 +313,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[]) {
 
   app->curgpad = NULL;
   SDL_memset(&app->Movement, 0, sizeof(struct Transform));
-  app->win = SDL_malloc(sizeof(struct window));
-  app->win->type = WAYVR_WINDOWTYPE_NONE;
+  app->WinList = WayVR_WinList_Init();
   app->cwin = NULL;
   app->SelectWin = false;
   app->Config = DefaultConfiguraion;

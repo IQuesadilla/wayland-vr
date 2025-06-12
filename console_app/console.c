@@ -1,14 +1,14 @@
 #include "console.h"
 
-#include <SDL3_ttf/SDL_ttf.h>
 #include <unistd.h>
 #include <pty.h>
 #include <signal.h>
 #include <poll.h>
 #include <sys/wait.h>
 #include <sys/ioctl.h>
+#include <SDL3/SDL.h>
 
-int console_process(struct console *con, const char *text, int len);
+struct console_updatelist *console_process(struct console *con, const char *text, int len);
 
 /*------ Console Object Definition ------*/
 
@@ -18,15 +18,12 @@ struct dirtyrect {
 };
 
 struct console {
-  TTF_TextEngine *tengine;
-  TTF_Font *font;
-  TTF_Text *text;
-  int window_height;
+  //int window_height;
   //SDL_Process *proc;
   int confd;
   pid_t cpid;
-  int curx, cury;
-  int doRedraw;
+  SDL_Point cur;
+  SDL_Point tsz;
   struct dirtyrect *dirtyrects;
 };
 
@@ -35,19 +32,10 @@ struct console {
 bool console_init(struct console **con, SDL_Renderer* rend) {
   struct console *newcon = (struct console*)SDL_malloc(sizeof(struct console));
 
-  newcon->tengine = TTF_CreateRendererTextEngine(rend);
-  if (newcon->tengine == NULL) return false;
-
-  bool s = console_setfontsize(newcon, 12);
-  if (newcon->font == NULL || !s) return false;
-
-  newcon->text = TTF_CreateText(newcon->tengine, newcon->font, "", 0);
-  if (newcon->text == NULL) return false;
-
-  int w, h;
-  SDL_Window *win = SDL_GetRenderWindow(rend);
-  SDL_GetWindowSize(win, &w, &h);
-  console_resize(newcon, w, h);
+  //int w, h;
+  //SDL_Window *win = SDL_GetRenderWindow(rend);
+  //SDL_GetWindowSize(win, &w, &h);
+  //console_resize(newcon, w, h);
 
   char* const args[] = {"/bin/sh", NULL};
   pid_t cpid = forkpty(&newcon->confd, NULL, NULL, NULL);
@@ -59,8 +47,8 @@ bool console_init(struct console **con, SDL_Renderer* rend) {
     return false;
   }
   newcon->cpid = cpid;
-  newcon->curx = 0;
-  newcon->cury = 0;
+  newcon->cur.x = 0;
+  newcon->cur.y = 0;
 
   *con = newcon;
   return true;
@@ -69,53 +57,25 @@ bool console_init(struct console **con, SDL_Renderer* rend) {
 void console_deinit(struct console *con) {
   if (kill(con->cpid, SIGHUP) == 0)
     waitpid(con->cpid, NULL, 0);
-  TTF_DestroyText(con->text);
-  TTF_CloseFont(con->font);
-  TTF_DestroyRendererTextEngine(con->tengine); 
 }
 
-void console_resize(struct console *con, int w, int h) {
-  con->window_height = h;
-  TTF_SetTextWrapWidth(con->text, w);
+void console_resize(struct console *con, SDL_Point sz) {
+  //con->window_height = 0;
 
-  int fontw, fonth;
-  TTF_GetStringSize(con->font, "m", 1, &fontw, &fonth);
-  struct winsize sz = {0};
-  sz.ws_row = w / fontw;
-  sz.ws_col = h / fonth;
+  con->tsz = sz;
+  struct winsize wsz = {0};
+  wsz.ws_col = sz.x;
+  wsz.ws_row = sz.y;
 
-  SDL_LogDebug(SDL_LOG_CATEGORY_RENDER, "Resize: w: %d, h: %d\n", sz.ws_col, sz.ws_row);
+  SDL_LogDebug(SDL_LOG_CATEGORY_RENDER, "Resize: w: %d, h: %d\n", wsz.ws_col, wsz.ws_row);
   ioctl(con->confd, TIOCSWINSZ, &sz);
-}
-
-bool console_setfontsize(struct console *con, int sz) {
-  TTF_Font *newfont = TTF_OpenFont("font.ttf", 16);
-  if (newfont == NULL) return false;
-
-  if (!TTF_FontIsFixedWidth(newfont)) {
-    SDL_LogError(SDL_LOG_CATEGORY_RENDER, "FONT IS NOT MONOSPACE!\n");
-    TTF_CloseFont(newfont);
-    con->font = NULL;
-    return false;
-  }
-  con->font = newfont;
-
-  SDL_LogInfo(SDL_LOG_CATEGORY_INPUT, "Font is %s\n", TTF_GetFontFamilyName(con->font));
-
-  int minx, maxx, miny, maxy, adv;
-  TTF_GetGlyphMetrics(con->font, 'm', &minx, &maxx, &miny, &maxy, &adv);
-  SDL_Log("MINX: %d | MAXX: %d | MINY: %d | MAXY: %d | ADV: %d\n", minx, maxx, miny, maxy, adv);
-
-  TTF_GetStringSize(con->font, "m", 1, &maxx, &maxy);
-  SDL_Log("W: %d, H: %d\n", maxx, maxy);
-  return true;
 }
 
 void console_write(struct console *con, const char *text, size_t len) {
   write(con->confd, text, len);
 }
 
-int console_update(struct console *con) {
+struct console_updatelist *console_update(struct console *con) {
   char buf[128];
   struct pollfd fds = {0};
   fds.fd = con->confd;
@@ -124,30 +84,24 @@ int console_update(struct console *con) {
     if (fds.revents & POLL_IN) {
       size_t len = read(con->confd, buf, 128);
       if (len > 0) {
-        console_process(con, buf, len);
+        return console_process(con, buf, len);
       }
     }
   }
-  return con->doRedraw;
+  return NULL;
 }
 
-void console_draw(struct console *con) {
-  // NOTE: In this case, the dirty rectangles should refer to locations, not pixels
-  int h, y = 0;
-  TTF_GetTextSize(con->text, NULL, &h);
-  if (h > con->window_height)
-    y = con->window_height - h;
-  TTF_DrawRendererText(con->text, 0, y);
-  con->doRedraw = 0;
-}
+/*void console_draw(struct console *con) {
+
+}*/
 
 /*------ Helper Functions ------*/
 
 //void console_cleardirtyrects(struct console *con)
 
-void console_addredraw(struct console *con, SDL_Rect *region) {
+/*void console_addredraw(struct console *con, SDL_Rect *region) {
   if (region == NULL) {
-    con->doRedraw = 2; // Do a clear and redraw
+    //con->doRedraw = 2; // Do a clear and redraw
     struct dirtyrect *it = con->dirtyrects;
     while (it != NULL) {
       struct dirtyrect *next = it->next;
@@ -167,31 +121,112 @@ void console_addredraw(struct console *con, SDL_Rect *region) {
       last->next = newitem;
     }
   }
-}
+}*/
 
-int console_process(struct console *con, const char *text, int len) {
+struct console_updatelist *console_process(struct console *con, const char *text, int len) {
   //*con->SceneHasChanged = true;
   //const char cur = (char)219;
-  //TTF_SetTextString(con->text, text, len);
-  TTF_AppendTextString(con->text, text, len);
-  //TTF_AppendTextString(con->text, &cur, 1);
+  struct console_updatelist *ret = NULL;
+  struct console_updatelist *lit = NULL;
   const char *it = text;
   size_t plen = len;
   Uint32 ch; 
-  int startesc = 0;
-  while ((ch = SDL_StepUTF8(&it, &plen)) != '\0') {
-    if (ch == '\e')
-      startesc = 1;
+  int newlinesup = 0;
+  char *cit = NULL;
+  while ((ch = SDL_StepUTF8(&it, &plen)) != 0) {
+    bool donewitem = false;
+    if (ch == '\e') {
+      ch = 0;//'~';
+      //SDL_Log("%x", *it); //NOTE: Prints [ (0x5b)
+      switch (it[0]) {
+        case '[':
+          switch (it[1]) {
+            case '?':
+              switch (it[2]) {
+                case '2':
+                  switch (it[3]) {
+                    case '5': // ~[?25h
+                      it += 5;
+                      plen -= 5;
+                      break;
+                    case '0': // ~[?2004h
+                      it += 7;
+                      plen -= 7;
+                      break;
+                  }
+                  break;
+              }
+              break;
+            case 'K': // ~[K -> ~[0K
+              it += 2;
+              plen -= 2;
+              break;
+            case 'm': // ~[m -> ~[0m
+              it += 2;
+              plen -= 2;
+              break;
+          }
+          break;
+        case '(': // ~(B
+          switch (it[1]) {
+            case 'B':
+              it += 2;
+              plen -= 2;
+              break;
+          }
+          break;
+      }
+    }
+    {
+      if (con->cur.x >= con->tsz.x || ch == '\n') {
+        donewitem = true;
+        con->cur.x = 0;
+        con->cur.y += 1;
+        if (con->cur.y >= con->tsz.y) {
+          newlinesup = con->cur.y - con->tsz.y + 1;
+          con->cur.y = con->tsz.y - 1;
+          //SDL_Log("New lines up: %d %d", newlinesup, con->cur.y);
+        }
+        ch = 0;
+      }
+      if (ch == '\r') {
+        donewitem = true;
+        ch = 0;
+        con->cur.x = 0;
+        //con->cur.y += 1;
+      }
 
-    if (startesc) {
-      if (startesc < 6) {
-        ++startesc;
-        SDL_Log("%x", ch);
-      } else {
-        startesc = 0;
-        SDL_Log("\n");
+      if (donewitem || ret == NULL) {
+        struct console_updatelist *newitem = SDL_malloc(sizeof(struct console_updatelist));
+        newitem->Text = SDL_malloc(256);
+        newitem->Length = 0;
+        newitem->LinesUp = newlinesup;
+        newitem->Location = con->cur;
+        newitem->next = NULL;
+        if (lit == NULL) {
+          ret = newitem;
+        } else {
+          //lit->Text[lit->Length] = 0;
+          lit->next = newitem;
+        }
+        cit = newitem->Text;
+        lit = newitem;
+      }
+      if (ch != 0) {
+        /*if (cit - lit->Text > 250) {
+          SDL_Log("reallocing");
+          lit->Text = SDL_realloc(lit->Text, lit->Length * 2);
+          cit = lit->Text + lit->Length;
+        }*/
+        char *oldcit = cit;
+        cit = SDL_UCS4ToUTF8(ch, cit);
+        lit->Length += (cit - oldcit);
+        con->cur.x += 1;
       }
     }
   }
-  return 0;
+  //if (lit != NULL)
+    //lit->Text[lit->Length+1] = 0;
+  //SDL_Log("Dont with hh");
+  return ret;
 }

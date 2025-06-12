@@ -4,6 +4,7 @@
 struct display {
   char name[64];
   SDL_GPUGraphicsPipeline *pipeline;
+  SDL_GPUTexture *depthTexture;
   SDL_Window *win;
   struct Transform t;
   struct display *next;
@@ -56,7 +57,16 @@ SDL_GPURenderPass *BeginRenderPass(struct display *d, SDL_GPUCommandBuffer *cmdb
   ColorTargetInfo.load_op = SDL_GPU_LOADOP_CLEAR;
   ColorTargetInfo.store_op = SDL_GPU_STOREOP_STORE;
 
-  SDL_GPURenderPass *ret = SDL_BeginGPURenderPass(cmdbuf, &ColorTargetInfo, 1, NULL);
+  SDL_GPUDepthStencilTargetInfo DepthTargetInfo = {0};
+  DepthTargetInfo.texture = d->depthTexture;
+  DepthTargetInfo.clear_depth = 1.f;
+  DepthTargetInfo.load_op = SDL_GPU_LOADOP_CLEAR;
+  DepthTargetInfo.store_op = SDL_GPU_STOREOP_DONT_CARE;
+  DepthTargetInfo.cycle = true;
+  DepthTargetInfo.stencil_load_op = SDL_GPU_LOADOP_DONT_CARE;
+  DepthTargetInfo.stencil_store_op = SDL_GPU_STOREOP_DONT_CARE;
+
+  SDL_GPURenderPass *ret = SDL_BeginGPURenderPass(cmdbuf, &ColorTargetInfo, 1, &DepthTargetInfo);
   SDL_BindGPUGraphicsPipeline(ret, d->pipeline);
   return ret;
 }
@@ -116,6 +126,8 @@ bool UpdateDisplays(struct displays *disp, int *dispcount) {
         .color_target_descriptions = (SDL_GPUColorTargetDescription[]){{
           .format = SDL_GetGPUSwapchainTextureFormat(disp->gpudev, win)
         }},
+        .depth_stencil_format = SDL_GPU_TEXTUREFORMAT_D16_UNORM,
+        .has_depth_stencil_target = true,
       };
 
       SDL_GPUGraphicsPipeline *pipeline = SDL_CreateGPUGraphicsPipeline(disp->gpudev, &pipelineci);
@@ -124,10 +136,29 @@ bool UpdateDisplays(struct displays *disp, int *dispcount) {
         return false;
       }
 
+      SDL_GPUTexture *depthTexture = SDL_CreateGPUTexture(
+        disp->gpudev,
+        &(SDL_GPUTextureCreateInfo) {
+          .type = SDL_GPU_TEXTURETYPE_2D,
+          .width = mode->w,
+          .height = mode->h,
+          .layer_count_or_depth = 1,
+          .num_levels = 1,
+          .sample_count = SDL_GPU_SAMPLECOUNT_1,
+          .format = SDL_GPU_TEXTUREFORMAT_D16_UNORM,
+          .usage = SDL_GPU_TEXTUREUSAGE_DEPTH_STENCIL_TARGET
+        }
+      );
+      if (depthTexture == NULL) {
+        SDL_LogCritical(SDL_LOG_CATEGORY_GPU, "Failed to create depth texture for window %s (%s)", name, SDL_GetError());
+        return false;
+      }
+
       struct display *newnode = SDL_malloc(sizeof(struct display));
       newnode = SDL_malloc(sizeof(struct display));
       SDL_utf8strlcpy(newnode->name, name, 64);
       newnode->pipeline = pipeline;
+      newnode->depthTexture = depthTexture;
       newnode->win = win;
       newnode->next = NULL;
       SDL_memset(&newnode->t, 0, sizeof(newnode->t));

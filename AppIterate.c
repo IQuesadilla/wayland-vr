@@ -19,7 +19,10 @@ SDL_AppResult SDL_AppIterate(void *appstate) {
     glm_vec3_add(trans, tp->Translation, tp->Translation);
   }
 
-  bool newframe = WayVR_AcquireFrame(app->win);
+  bool newframe = false;
+  for (struct window *win_it = WayVR_WinList_GetNext(app->WinList, NULL); win_it != NULL; win_it = WayVR_WinList_GetNext(app->WinList, win_it))
+    if (WayVR_AcquireFrame(win_it))
+      newframe = true;
 
   SDL_GPUCommandBuffer *cmdbuf = SDL_AcquireGPUCommandBuffer(app->dev);
   if (cmdbuf == NULL)
@@ -27,7 +30,8 @@ SDL_AppResult SDL_AppIterate(void *appstate) {
 
   if (newframe) {
     SDL_GPUCopyPass *cp = SDL_BeginGPUCopyPass(cmdbuf);
-    app->WindowSampler.texture = WayVR_UploadFrame(app->win, cp);
+    for (struct window *win_it = WayVR_WinList_GetNext(app->WinList, NULL); win_it != NULL; win_it = WayVR_WinList_GetNext(app->WinList, win_it))
+      WayVR_UploadFrame(win_it, cp);
     SDL_EndGPUCopyPass(cp);
   }
 
@@ -38,11 +42,12 @@ SDL_AppResult SDL_AppIterate(void *appstate) {
     CalculateVPMatrix(it, FrameViewMat, FramePerspMat);
     SDL_GPURenderPass *renderPass = BeginRenderPass(it, cmdbuf);
     SDL_BindGPUVertexBuffers(renderPass, 0, &app->vertBinding, 1);
-    SDL_BindGPUFragmentSamplers(renderPass, 0, &app->WallpaperSampler, 1);
-    SDL_DrawGPUPrimitives(renderPass, 6, 1, 0, 0);
-    struct window *win_it = app->win;
-    if (win_it->type != WAYVR_WINDOWTYPE_NONE) {
+    //SDL_BindGPUFragmentSamplers(renderPass, 0, &app->WallpaperSampler, 1);
+    //SDL_DrawGPUPrimitives(renderPass, 6, 1, 0, 0);
+    
+    for (struct window *win_it = WayVR_WinList_GetNext(app->WinList, NULL); win_it != NULL; win_it = WayVR_WinList_GetNext(app->WinList, win_it)) {
       mat4 FrameModelMat, FrameMVP;
+      app->WindowSampler.texture = WayVR_GetTexture(win_it);
       WayVR_CalculateModelMat(win_it, FrameModelMat);
       glm_mat4_mul(FrameViewMat, FrameModelMat, FrameMVP);
       glm_mat4_mul(FramePerspMat, FrameMVP, FrameMVP);

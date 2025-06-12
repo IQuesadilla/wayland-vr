@@ -3,7 +3,7 @@
 
 #include <SDL3/SDL.h>
 #include <cglm/cglm.h>
-#include <win2d.h>
+#include <cam2d.h>
 
 struct display;
 struct displays;

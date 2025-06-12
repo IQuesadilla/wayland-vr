@@ -18,7 +18,7 @@ executable('wayvr_console',
 )
 
 executable('wayvr',
-  ['AppInit.c', 'AppEvent.c', 'AppIterate.c', 'displays.c', 'window.c', 'win2d.c'],
+  ['AppInit.c', 'AppEvent.c', 'AppIterate.c', 'displays.c', 'window.c', 'cam2d.c'],
   dependencies: [sdl3_dep, cglm_dep],
   link_args: ['-lm'],
   install: true

@@ -38,7 +38,7 @@ static const struct WayVR_Configuration DefaultConfiguraion = {
 struct WayVR_Appstate {
   struct WayVR_Configuration Config;
   SDL_GPUDevice *dev;
-  struct window *win; // List of all windows - TODO
+  struct windows *WinList; // List of all windows - TODO
   struct window *cwin; // Currently selected window
   bool SelectWin;
   SDL_Gamepad *curgpad; // TODO Allow many inputs
