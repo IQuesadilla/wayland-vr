@@ -1,6 +1,8 @@
 build/
 .cache/
 .vscode/
+**/.zig-cache/
+**/zig-out/
 *.o
 *.so
 subprojects/*
